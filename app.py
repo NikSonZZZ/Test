@@ -59,6 +59,36 @@ def validate_reading(data):
     return None
 
 
+def save_reading(data):
+    error = validate_reading(data)
+    if error:
+        raise ValueError(error)
+
+    received_at = datetime.now(timezone.utc).isoformat()
+
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO sensor_readings (
+                farm_id, device_id, sensor_id, sensor_type, value, unit, recorded_at, received_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                data["farmId"],
+                data["deviceId"],
+                data["sensorId"],
+                data["sensorType"],
+                data["value"],
+                data["unit"],
+                data["timestamp"],
+                received_at,
+            ),
+        )
+
+    return cursor.lastrowid
+
+
 @app.route("/")
 def dashboard():
     return render_template_string(
@@ -315,33 +345,12 @@ def dashboard():
 @app.route("/api/readings", methods=["POST"])
 def add_reading():
     data = request.get_json(silent=True)
-    error = validate_reading(data)
-    if error:
-        return jsonify({"error": error}), 400
+    try:
+        reading_id = save_reading(data)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
-    received_at = datetime.now(timezone.utc).isoformat()
-
-    with get_connection() as conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO sensor_readings (
-                farm_id, device_id, sensor_id, sensor_type, value, unit, recorded_at, received_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                data["farmId"],
-                data["deviceId"],
-                data["sensorId"],
-                data["sensorType"],
-                data["value"],
-                data["unit"],
-                data["timestamp"],
-                received_at,
-            ),
-        )
-
-    return jsonify({"message": "Reading saved successfully", "id": cursor.lastrowid}), 201
+    return jsonify({"message": "Reading saved successfully", "id": reading_id}), 201
 
 
 @app.route("/api/readings", methods=["GET"])
